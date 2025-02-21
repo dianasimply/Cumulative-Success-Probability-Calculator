@@ -75,10 +75,10 @@
 <div id="container">
   <h1>Cumulative Success Probability Calculator</h1>
   <p>
-    Calcs cumulative success prob and gives you cool graph about it.
-    Extra info for nerds:
-    shows iterations from 0 to 2x the inserted query iteration amount, shows cool green line on query iteration.
-    Also has optional dot mode mostly useful for very large iteration calcs
+    This tool computes the chance of reaching a target number of successes over a series of iterations.
+    Enter the success rate, desired successes, and your target iteration.
+    The graph will show iterations from 0 to twice your target (with your target centered) and mark it with a vertical green line.
+    Optionally, set a Dot Interval to display points every so many iterations.
   </p>
   
   <form id="calcForm">
@@ -86,31 +86,25 @@
     <input type="number" id="queryIteration" value="50" min="1" step="1">
     
     <label for="probability">Probability per Iteration (in %):</label>
-    <input type="number" id="probability" value="10" min="0" max="100" step="0.01">
+    <input type="number" id="probability" value="5" min="0" max="100" step="0.01">
     
     <label for="desiredSuccesses">Desired Number of Successes:</label>
-    <input type="number" id="desiredSuccesses" value="2" min="1" step="1">
+    <input type="number" id="desiredSuccesses" value="30" min="1" step="1">
     
     <label for="dotInterval">Dot Interval (optional):</label>
-    <input type="number" id="dotInterval" placeholder="e.g., 10" value="5" min="1" step="1">
+    <input type="number" id="dotInterval" placeholder="e.g., 10" min="1" step="1">
     
     <button type="button" onclick="calculate()">Calculate</button>
   </form>
   
   <div id="result"></div>
-  <!-- Increased canvas height for better vertical visibility -->
   <canvas id="chart" width="800" height="600"></canvas>
 </div>
 
 <script>
-// Log Gamma function (Lanczos approximation)
 function logGamma(z) {
-  const coeff = [76.18009172947146, -86.50532032941677,
-                 24.01409824083091, -1.231739572450155,
-                 0.001208650973866179, -0.000005395239384953];
-  let x = z;
-  let y = z;
-  let tmp = x + 5.5;
+  const coeff = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.001208650973866179, -0.000005395239384953];
+  let x = z, y = z, tmp = x + 5.5;
   tmp -= (x + 0.5) * Math.log(tmp);
   let ser = 1.000000000190015;
   for (let j = 0; j < coeff.length; j++) {
@@ -120,14 +114,11 @@ function logGamma(z) {
   return -tmp + Math.log(2.5066282746310005 * ser / x);
 }
 
-// Compute binomial probability: P(X = k) for n iterations with success probability p.
 function binomProb(n, k, p) {
-  let logProb = logGamma(n + 1) - logGamma(k + 1) - logGamma(n - k + 1)
-                + k * Math.log(p) + (n - k) * Math.log(1 - p);
+  let logProb = logGamma(n + 1) - logGamma(k + 1) - logGamma(n - k + 1) + k * Math.log(p) + (n - k) * Math.log(1 - p);
   return Math.exp(logProb);
 }
 
-// Compute cumulative probability: P(X >= r successes in n iterations)
 function binomCumulative(n, r, p) {
   if (n < r) return 0;
   let sum = 0;
@@ -140,21 +131,16 @@ function binomCumulative(n, r, p) {
 let chart;
 
 function calculate() {
-  // Retrieve user inputs
   const queryIteration = parseInt(document.getElementById('queryIteration').value, 10);
   const probabilityPercent = parseFloat(document.getElementById('probability').value);
   const desiredSuccesses = parseInt(document.getElementById('desiredSuccesses').value, 10);
   const dotIntervalInput = document.getElementById('dotInterval').value;
   const dotInterval = dotIntervalInput ? parseInt(dotIntervalInput, 10) : null;
   
-  // Convert probability to decimal.
   const p = probabilityPercent / 100;
-  
-  // Define the graph range: from 0 to double the query iteration.
   const minIteration = 0;
   const maxGraphIteration = 2 * queryIteration;
   
-  // Build an array of data points for the main dataset.
   let dataPoints = [];
   if (dotInterval) {
     for (let n = minIteration; n <= maxGraphIteration; n += dotInterval) {
@@ -168,15 +154,12 @@ function calculate() {
     }
   }
   
-  // Always ensure the query iteration point is included.
   const queryY = binomCumulative(queryIteration, desiredSuccesses, p);
   if (!dataPoints.some(pt => pt.x === queryIteration)) {
     dataPoints.push({ x: queryIteration, y: queryY });
   }
-  // Sort the data points by x value.
   dataPoints.sort((a, b) => a.x - b.x);
   
-  // Display cumulative probability at the query iteration.
   const resultHTML = `<h2>Results</h2>
     <p><strong>Query Iteration (Target):</strong> ${queryIteration}</p>
     <p><strong>Desired Successes:</strong> ${desiredSuccesses}</p>
@@ -184,14 +167,12 @@ function calculate() {
     <p><strong>Cumulative Probability by iteration ${queryIteration}:</strong> ${(queryY * 100).toFixed(2)}%</p>`;
   document.getElementById('result').innerHTML = resultHTML;
   
-  // Destroy previous chart if it exists.
   if (chart) {
     chart.destroy();
   }
   
   const ctx = document.getElementById('chart').getContext('2d');
   
-  // Main dataset for the cumulative probability curve.
   const mainDataset = {
     label: 'Cumulative Probability',
     data: dataPoints,
@@ -211,7 +192,7 @@ function calculate() {
       datasets: [mainDataset]
     },
     options: {
-      parsing: false, // our data points already have x and y
+      parsing: false,
       scales: {
         x: {
           type: 'linear',
@@ -250,7 +231,6 @@ function calculate() {
     },
     plugins: [
       {
-        // Draw a vertical green line at the query iteration.
         id: 'verticalLine',
         afterDraw: (chart) => {
           const ctx = chart.ctx;
