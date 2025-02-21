@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Cumulative Success Probability Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      background-color: #2c3e50;
+      color: #ecf0f1;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    #container {
+      max-width: 900px;
+      margin: 40px auto;
+      background-color: #34495e;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      padding: 20px 40px 40px 40px;
+    }
+    h1, h2 {
+      text-align: center;
+      color: #e67e22;
+    }
+    p {
+      line-height: 1.6;
+    }
+    form {
+      margin-bottom: 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    form label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    form input {
+      width: 100%;
+      padding: 8px;
+      border: none;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    form button {
+      grid-column: span 2;
+      background-color: #e67e22;
+      border: none;
+      color: #ecf0f1;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    form button:hover {
+      background-color: #cf711f;
+    }
+    #result {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #3b5360;
+      border-radius: 4px;
+    }
+    canvas {
+      background-color: #ecf0f1;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+<div id="container">
+  <h1>Cumulative Success Probability Calculator</h1>
+  <p>
+    Calcs cumulative success prob and gives you cool graph about it.
+    Extra info for nerds:
+    shows iterations from 0 to 2x the inserted query iteration amount, shows cool green line on query iteration.
+    Also has optional dot mode mostly useful for very large iteration calcs
+  </p>
+  
+  <form id="calcForm">
+    <label for="queryIteration">Query Iteration (Target):</label>
+    <input type="number" id="queryIteration" value="50" min="1" step="1">
+    
+    <label for="probability">Probability per Iteration (in %):</label>
+    <input type="number" id="probability" value="10" min="0" max="100" step="0.01">
+    
+    <label for="desiredSuccesses">Desired Number of Successes:</label>
+    <input type="number" id="desiredSuccesses" value="2" min="1" step="1">
+    
+    <label for="dotInterval">Dot Interval (optional):</label>
+    <input type="number" id="dotInterval" placeholder="e.g., 10" value="5" min="1" step="1">
+    
+    <button type="button" onclick="calculate()">Calculate</button>
+  </form>
+  
+  <div id="result"></div>
+  <!-- Increased canvas height for better vertical visibility -->
+  <canvas id="chart" width="800" height="600"></canvas>
+</div>
+
+<script>
+// Log Gamma function (Lanczos approximation)
+function logGamma(z) {
+  const coeff = [76.18009172947146, -86.50532032941677,
+                 24.01409824083091, -1.231739572450155,
+                 0.001208650973866179, -0.000005395239384953];
+  let x = z;
+  let y = z;
+  let tmp = x + 5.5;
+  tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for (let j = 0; j < coeff.length; j++) {
+    y += 1;
+    ser += coeff[j] / y;
+  }
+  return -tmp + Math.log(2.5066282746310005 * ser / x);
+}
+
+// Compute binomial probability: P(X = k) for n iterations with success probability p.
+function binomProb(n, k, p) {
+  let logProb = logGamma(n + 1) - logGamma(k + 1) - logGamma(n - k + 1)
+                + k * Math.log(p) + (n - k) * Math.log(1 - p);
+  return Math.exp(logProb);
+}
+
+// Compute cumulative probability: P(X >= r successes in n iterations)
+function binomCumulative(n, r, p) {
+  if (n < r) return 0;
+  let sum = 0;
+  for (let k = 0; k < r; k++) {
+    sum += binomProb(n, k, p);
+  }
+  return 1 - sum;
+}
+
+let chart;
+
+function calculate() {
+  // Retrieve user inputs
+  const queryIteration = parseInt(document.getElementById('queryIteration').value, 10);
+  const probabilityPercent = parseFloat(document.getElementById('probability').value);
+  const desiredSuccesses = parseInt(document.getElementById('desiredSuccesses').value, 10);
+  const dotIntervalInput = document.getElementById('dotInterval').value;
+  const dotInterval = dotIntervalInput ? parseInt(dotIntervalInput, 10) : null;
+  
+  // Convert probability to decimal.
+  const p = probabilityPercent / 100;
+  
+  // Define the graph range: from 0 to double the query iteration.
+  const minIteration = 0;
+  const maxGraphIteration = 2 * queryIteration;
+  
+  // Build an array of data points for the main dataset.
+  let dataPoints = [];
+  if (dotInterval) {
+    for (let n = minIteration; n <= maxGraphIteration; n += dotInterval) {
+      dataPoints.push({ x: n, y: binomCumulative(n, desiredSuccesses, p) });
+    }
+  } else {
+    const maxPoints = 300;
+    const step = Math.max(1, Math.ceil((maxGraphIteration - minIteration) / maxPoints));
+    for (let n = minIteration; n <= maxGraphIteration; n += step) {
+      dataPoints.push({ x: n, y: binomCumulative(n, desiredSuccesses, p) });
+    }
+  }
+  
+  // Always ensure the query iteration point is included.
+  const queryY = binomCumulative(queryIteration, desiredSuccesses, p);
+  if (!dataPoints.some(pt => pt.x === queryIteration)) {
+    dataPoints.push({ x: queryIteration, y: queryY });
+  }
+  // Sort the data points by x value.
+  dataPoints.sort((a, b) => a.x - b.x);
+  
+  // Display cumulative probability at the query iteration.
+  const resultHTML = `<h2>Results</h2>
+    <p><strong>Query Iteration (Target):</strong> ${queryIteration}</p>
+    <p><strong>Desired Successes:</strong> ${desiredSuccesses}</p>
+    <p><strong>Probability per Iteration:</strong> ${(p * 100).toFixed(2)}%</p>
+    <p><strong>Cumulative Probability by iteration ${queryIteration}:</strong> ${(queryY * 100).toFixed(2)}%</p>`;
+  document.getElementById('result').innerHTML = resultHTML;
+  
+  // Destroy previous chart if it exists.
+  if (chart) {
+    chart.destroy();
+  }
+  
+  const ctx = document.getElementById('chart').getContext('2d');
+  
+  // Main dataset for the cumulative probability curve.
+  const mainDataset = {
+    label: 'Cumulative Probability',
+    data: dataPoints,
+    borderColor: '#e67e22',
+    backgroundColor: '#e67e22',
+    fill: false,
+    tension: 0.1,
+    pointRadius: dotInterval ? 5 : 3,
+    pointHoverRadius: dotInterval ? 7 : 4,
+    borderWidth: dotInterval ? 1 : 2,
+    order: 1
+  };
+  
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [mainDataset]
+    },
+    options: {
+      parsing: false, // our data points already have x and y
+      scales: {
+        x: {
+          type: 'linear',
+          position: 'bottom',
+          title: {
+            display: true,
+            text: 'Iteration'
+          },
+          min: minIteration,
+          max: maxGraphIteration
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Cumulative Probability'
+          },
+          min: 0,
+          max: 1.2,
+          ticks: {
+            callback: function(value) {
+              return value === 1.2 ? '' : value;
+            }
+          }
+        }
+      },
+      plugins: {
+        title: {
+          display: true,
+          text: `Cumulative Probability of Achieving ≥ ${desiredSuccesses} Successes`
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false
+        }
+      }
+    },
+    plugins: [
+      {
+        // Draw a vertical green line at the query iteration.
+        id: 'verticalLine',
+        afterDraw: (chart) => {
+          const ctx = chart.ctx;
+          const xAxis = chart.scales.x;
+          const yAxis = chart.scales.y;
+          if (queryIteration < xAxis.min || queryIteration > xAxis.max) return;
+          const xPixel = xAxis.getPixelForValue(queryIteration);
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(xPixel, yAxis.top);
+          ctx.lineTo(xPixel, yAxis.bottom);
+          ctx.lineWidth = dotInterval ? 3 : 2;
+          ctx.strokeStyle = '#27ae60';
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    ]
+  });
+}
+</script>
+</body>
+</html>
